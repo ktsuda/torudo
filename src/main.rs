@@ -1,12 +1,11 @@
 use clap::Parser;
-use log::{debug, info, error};
-use std::io::Write;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use std::time::{Duration, Instant};
+use log::{debug, error, info};
+use notify::{Event as NotifyEvent, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Alignment, Constraint, Direction, Layout},
@@ -15,30 +14,31 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Wrap},
     Terminal,
 };
-use std::{error::Error, io, env, sync::mpsc};
-use notify::{Watcher, RecursiveMode, RecommendedWatcher, Event as NotifyEvent, EventKind};
+use std::io::Write;
+use std::time::{Duration, Instant};
+use std::{env, error::Error, io, sync::mpsc};
 
-mod todo;
 mod app_state;
-use todo::{Item, load_todos, add_missing_ids};
+mod todo;
 use app_state::AppState;
+use todo::{add_missing_ids, load_todos, Item};
 
 fn confirm_creation(item_type: &str, path: &str) -> io::Result<bool> {
-    println!("{} does not exist: {}", item_type, path);
+    println!("{item_type} does not exist: {path}");
     print!("Create it? (y/N): ");
     io::stdout().flush()?;
-    
+
     let mut input = String::new();
     io::stdin().read_line(&mut input)?;
     let input = input.trim().to_lowercase();
-    
+
     Ok(input == "y" || input == "yes")
 }
 
 fn ensure_setup_exists(todotxt_dir: &str, todo_file: &str) -> Result<(), Box<dyn Error>> {
     use std::fs;
     use std::path::Path;
-    
+
     // Check if todotxt directory exists
     if !Path::new(todotxt_dir).exists() {
         if !confirm_creation("todotxt directory", todotxt_dir)? {
@@ -46,9 +46,9 @@ fn ensure_setup_exists(todotxt_dir: &str, todo_file: &str) -> Result<(), Box<dyn
             std::process::exit(1);
         }
         fs::create_dir_all(todotxt_dir)?;
-        println!("Created todotxt directory: {}", todotxt_dir);
+        println!("Created todotxt directory: {todotxt_dir}");
     }
-    
+
     // Check if todo.txt exists
     if !Path::new(todo_file).exists() {
         if !confirm_creation("todo.txt", todo_file)? {
@@ -56,9 +56,9 @@ fn ensure_setup_exists(todotxt_dir: &str, todo_file: &str) -> Result<(), Box<dyn
             std::process::exit(1);
         }
         fs::write(todo_file, "")?;
-        println!("Created todo.txt: {}", todo_file);
+        println!("Created todo.txt: {todo_file}");
     }
-    
+
     Ok(())
 }
 
@@ -73,17 +73,17 @@ struct Args {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
-    
+
     let home_dir = env::var("HOME").unwrap();
     let todotxt_dir = env::var("TODOTXT_DIR").unwrap_or_else(|_| format!("{home_dir}/todotxt"));
     let todo_file = format!("{todotxt_dir}/todo.txt");
-    
+
     // Setup debug mode
     if args.debug {
         setup_debug_logging(&todotxt_dir)?;
         info!("Debug mode enabled");
-        debug!("TODOTXT_DIR: {}", todotxt_dir);
-        debug!("Todo file: {}", todo_file);
+        debug!("TODOTXT_DIR: {todotxt_dir}");
+        debug!("Todo file: {todo_file}");
     }
 
     // Ensure required directories and files exist
@@ -109,7 +109,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         },
         notify::Config::default(),
     )?;
-    watcher.watch(std::path::Path::new(&todotxt_dir), RecursiveMode::NonRecursive)?;
+    watcher.watch(
+        std::path::Path::new(&todotxt_dir),
+        RecursiveMode::NonRecursive,
+    )?;
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -138,17 +141,19 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 fn setup_debug_logging(todotxt_dir: &str) -> Result<(), Box<dyn Error>> {
     let debug_log_path = format!("{todotxt_dir}/debug.log");
-    
+
     env_logger::Builder::from_default_env()
         .target(env_logger::Target::Pipe(Box::new(
             std::fs::OpenOptions::new()
                 .create(true)
                 .append(true)
-                .open(debug_log_path)?
+                .open(debug_log_path)?,
         )))
         .filter_level(log::LevelFilter::Debug)
         .format(|buf, record| {
-            writeln!(buf, "[{}] {} - {}: {}",
+            writeln!(
+                buf,
+                "[{}] {} - {}: {}",
                 chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
                 record.level(),
                 record.target(),
@@ -156,12 +161,11 @@ fn setup_debug_logging(todotxt_dir: &str) -> Result<(), Box<dyn Error>> {
             )
         })
         .init();
-    
+
     Ok(())
 }
 
-
-fn create_todo_spans(todo: &Item) -> Vec<Span> {
+fn create_todo_spans(todo: &Item) -> Vec<Span<'_>> {
     let mut spans = Vec::new();
     if todo.completed {
         spans.push(Span::styled("✓ ", Style::default().fg(Color::Green)));
@@ -177,14 +181,14 @@ fn create_todo_spans(todo: &Item) -> Vec<Span> {
         };
         spans.push(Span::styled(
             format!("({priority}) "),
-            Style::default().fg(color).add_modifier(Modifier::BOLD)
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
         ));
     }
     spans.push(Span::raw(&todo.description));
     for context in &todo.contexts {
         spans.push(Span::styled(
             format!(" @{context}"),
-            Style::default().fg(Color::Cyan)
+            Style::default().fg(Color::Cyan),
         ));
     }
     spans
@@ -232,16 +236,19 @@ fn draw_project_column_owned(
 
     // Calculate dynamic height for each todo based on text length
     let available_width = inner_area.width.saturating_sub(4); // Account for borders
-    let todo_constraints: Vec<Constraint> = project_todos.iter()
+    let todo_constraints: Vec<Constraint> = project_todos
+        .iter()
         .map(|todo| {
             // Create spans to get accurate text length including priority and context
             let spans = create_todo_spans(todo);
             let total_text_len: usize = spans.iter().map(|span| span.content.chars().count()).sum();
-            
-            let lines_needed = if available_width > 0 && available_width > 10 {
+
+            let lines_needed = if available_width > 10 {
                 // More conservative calculation for better text wrapping
                 let effective_width = available_width.saturating_sub(2); // Account for padding
-                let lines = ((total_text_len as u16 + effective_width - 1) / effective_width).max(1);
+                let lines = u16::try_from(total_text_len)
+                    .expect("REASON")
+                    .div_ceil(effective_width);
                 lines + 2 // +2 for borders
             } else {
                 4 // Fallback minimum height
@@ -275,19 +282,19 @@ fn draw_project_column_owned(
     }
 }
 
-fn draw_ui(
-    f: &mut ratatui::Frame,
-    state: &AppState,
-) {
+fn draw_ui(f: &mut ratatui::Frame, state: &AppState) {
     let size = f.area();
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(0),
-            Constraint::Length(3),
-        ].as_ref())
+        .constraints(
+            [
+                Constraint::Length(3),
+                Constraint::Min(0),
+                Constraint::Length(3),
+            ]
+            .as_ref(),
+        )
         .split(size);
 
     let title = Paragraph::new("Todo.txt Viewer")
@@ -308,7 +315,11 @@ fn draw_ui(
         for (col_idx, project_name) in state.project_names.iter().enumerate() {
             if let Some(project_todos) = state.grouped_todos.get(project_name) {
                 let is_active_column = col_idx == state.current_column;
-                let selected_for_this_column = if is_active_column { state.selected_in_column } else { usize::MAX };
+                let selected_for_this_column = if is_active_column {
+                    state.selected_in_column
+                } else {
+                    usize::MAX
+                };
 
                 draw_project_column_owned(
                     f,
@@ -322,22 +333,22 @@ fn draw_ui(
         }
     }
 
-    let instructions = Paragraph::new("jk: Navigate | hl: Change Column | x: Complete | r: Reload | q: Quit")
-        .block(Block::default().title("Instructions").borders(Borders::ALL))
-        .alignment(Alignment::Center);
+    let instructions =
+        Paragraph::new("jk: Navigate | hl: Change Column | x: Complete | r: Reload | q: Quit")
+            .block(Block::default().title("Instructions").borders(Borders::ALL))
+            .alignment(Alignment::Center);
 
     f.render_widget(title, chunks[0]);
     f.render_widget(instructions, chunks[2]);
 }
 
-
 fn run_app<B: ratatui::backend::Backend>(
-    terminal: &mut Terminal<B>, 
+    terminal: &mut Terminal<B>,
     todos: Vec<Item>,
     file_watcher_rx: &mpsc::Receiver<NotifyEvent>,
     todo_file: &str,
     debug_mode: bool,
-    _watcher: RecommendedWatcher
+    _watcher: RecommendedWatcher,
 ) -> io::Result<()> {
     let mut state = AppState::new(todos);
     let mut last_reload_time: Option<Instant> = None;
@@ -356,10 +367,11 @@ fn run_app<B: ratatui::backend::Backend>(
         while let Ok(event) = file_watcher_rx.try_recv() {
             // Check if event is related to todo.txt
             let todo_file_path = std::path::Path::new(todo_file);
-            let is_todo_file_event = event.paths.iter().any(|path| {
-                path.file_name() == todo_file_path.file_name()
-            });
-            
+            let is_todo_file_event = event
+                .paths
+                .iter()
+                .any(|path| path.file_name() == todo_file_path.file_name());
+
             if is_todo_file_event {
                 if debug_mode {
                     debug!("todo.txt related event detected: {:?}", event.kind);
@@ -379,25 +391,21 @@ fn run_app<B: ratatui::backend::Backend>(
                 }
             }
         }
-        
+
         // Debounce functionality: execute reload after certain time since last reload
         if should_reload {
             let now = Instant::now();
-            let should_perform_reload = match last_reload_time {
-                None => true,
-                Some(last_time) => now.duration_since(last_time) >= debounce_duration,
-            };
-            
+            let should_perform_reload = last_reload_time
+                .is_none_or(|last_time| now.duration_since(last_time) >= debounce_duration);
+
             if should_perform_reload {
                 if debug_mode {
                     debug!("Executing debounced reload of todos");
                 }
                 state.handle_reload(todo_file);
                 last_reload_time = Some(now);
-            } else {
-                if debug_mode {
-                    debug!("Skipping reload due to debounce (too recent)");
-                }
+            } else if debug_mode {
+                debug!("Skipping reload due to debounce (too recent)");
             }
         }
 
@@ -410,25 +418,25 @@ fn run_app<B: ratatui::backend::Backend>(
                             debug!("Quit command received");
                         }
                         return Ok(());
-                    },
+                    }
                     KeyCode::Char(c @ ('k' | 'j' | 'h' | 'l')) => {
                         if debug_mode {
-                            debug!("Navigation key pressed: {}", c);
+                            debug!("Navigation key pressed: {c}");
                         }
                         state.handle_navigation_key(c);
-                    },
+                    }
                     KeyCode::Char('x') => {
                         if debug_mode {
                             debug!("Complete todo command received");
                         }
                         state.handle_complete_todo(todo_file);
-                    },
+                    }
                     KeyCode::Char('r') => {
                         if debug_mode {
                             debug!("Reload command received");
                         }
                         state.handle_reload(todo_file);
-                    },
+                    }
                     _ => {}
                 }
             }
