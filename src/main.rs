@@ -219,6 +219,7 @@ fn draw_project_column_owned(
     column_area: ratatui::layout::Rect,
     is_active_column: bool,
     selected_in_column: usize,
+    scroll_offset: usize,
 ) {
     let border_style = if is_active_column {
         Style::default().fg(Color::Yellow)
@@ -227,7 +228,7 @@ fn draw_project_column_owned(
     };
 
     let project_block = Block::default()
-        .title(format!("{project_name} ({}))", project_todos.len()))
+        .title(format!("{project_name} ({})", project_todos.len()))
         .borders(Borders::ALL)
         .border_style(border_style);
 
@@ -257,28 +258,56 @@ fn draw_project_column_owned(
         })
         .collect();
 
-    if !todo_constraints.is_empty() {
-        let todo_layout = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints(todo_constraints)
-            .split(inner_area);
+    // Compute a visible window so we do not create many zero-height reacts when todos exceed
+    // terminal height.
+    let todo_heights: Vec<u16> = todo_constraints
+        .iter()
+        .map(|c| match *c {
+            Constraint::Length(h) => h,
+            _ => 4,
+        })
+        .collect();
 
-        for (todo_idx, todo) in project_todos.iter().enumerate() {
-            if todo_idx < todo_layout.len() {
-                let spans = create_todo_spans(todo);
-                let is_selected = is_active_column && todo_idx == selected_in_column;
-                let (todo_style, background_style) = get_todo_styles(is_selected, todo.completed);
+    let max_height = inner_area.height;
+    let start = scroll_offset.min(project_todos.len());
+    let mut used: u16 = 0;
+    let mut end = start;
 
-                let todo_paragraph = Paragraph::new(Line::from(spans))
-                    .block(Block::default()
-                        .borders(Borders::ALL)
-                        .border_style(todo_style))
-                    .style(background_style)
-                    .wrap(Wrap { trim: true });
-
-                f.render_widget(todo_paragraph, todo_layout[todo_idx]);
-            }
+    while end < project_todos.len() {
+        let h = todo_heights[end];
+        if used.saturating_add(h) > max_height {
+            break;
         }
+        used = used.saturating_add(h);
+        end += 1;
+    }
+
+    // Very small terminal: render at least one todo if possible.
+    if start < project_todos.len() && end == start {
+        end = start + 1;
+    }
+
+    let visible_constraints: Vec<Constraint> = todo_constraints[start..end].to_vec();
+    let todo_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(visible_constraints)
+        .split(inner_area);
+
+    for (local_idx, todo) in project_todos[start..end].iter().enumerate() {
+        let spans = create_todo_spans(todo);
+        let is_selected = is_active_column && (start + local_idx) == selected_in_column;
+        let (todo_style, background_style) = get_todo_styles(is_selected, todo.completed);
+
+        let todo_paragraph = Paragraph::new(Line::from(spans))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(todo_style),
+            )
+            .style(background_style)
+            .wrap(Wrap { trim: true });
+
+        f.render_widget(todo_paragraph, todo_layout[local_idx]);
     }
 }
 
@@ -328,6 +357,11 @@ fn draw_ui(f: &mut ratatui::Frame, state: &AppState) {
                     columns[col_idx],
                     is_active_column,
                     selected_for_this_column,
+                    if is_active_column {
+                        state.scroll_offset
+                    } else {
+                        0
+                    },
                 );
             }
         }

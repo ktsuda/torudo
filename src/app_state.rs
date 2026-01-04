@@ -1,4 +1,5 @@
 use crate::todo::{add_missing_ids, group_todos_by_project_owned, load_todos, mark_complete, Item};
+use crossterm::terminal;
 use log::{debug, error};
 use std::{collections::HashMap, env, process::Command};
 
@@ -28,6 +29,7 @@ pub struct AppState {
     pub project_names: Vec<String>,
     pub current_column: usize,
     pub selected_in_column: usize,
+    pub scroll_offset: usize,
 }
 
 impl AppState {
@@ -42,6 +44,7 @@ impl AppState {
             project_names,
             current_column: 0,
             selected_in_column: 0,
+            scroll_offset: 0,
         }
     }
 
@@ -69,6 +72,13 @@ impl AppState {
                 if self.selected_in_column >= current_todos.len() {
                     self.selected_in_column = current_todos.len().saturating_sub(1);
                 }
+                // Keep scroll offset in range for the current column
+                if self.scroll_offset > self.selected_in_column {
+                    self.scroll_offset = self.selected_in_column;
+                }
+                if self.scroll_offset >= current_todos.len() {
+                    self.scroll_offset = current_todos.len().saturating_sub(1);
+                }
                 if let Some(selected_todo) = current_todos.get(self.selected_in_column) {
                     if let Some(todo_id) = &selected_todo.id {
                         send_vim_command(todo_id);
@@ -90,6 +100,10 @@ impl AppState {
             'k' => {
                 if self.selected_in_column > 0 {
                     self.selected_in_column -= 1;
+                    // Ensure selected item stays visible
+                    if self.selected_in_column < self.scroll_offset {
+                        self.scroll_offset = self.selected_in_column;
+                    }
                     if let Some(todo_id) = self.get_current_todo_id() {
                         send_vim_command(todo_id);
                     }
@@ -100,6 +114,14 @@ impl AppState {
                     if let Some(current_todos) = self.grouped_todos.get(current_project_name) {
                         if self.selected_in_column < current_todos.len().saturating_sub(1) {
                             self.selected_in_column += 1;
+                            // Ensure selected item stays visible (page size is an estimate; actual
+                            // slicing is done in UI)
+                            let page = self.estimate_page_size();
+                            if self.selected_in_column >= self.scroll_offset.saturating_add(page) {
+                                self.scroll_offset = self
+                                    .selected_in_column
+                                    .saturating_sub(page.saturating_sub(1));
+                            }
                             if let Some(todo_id) = self.get_current_todo_id() {
                                 send_vim_command(todo_id);
                             }
@@ -111,6 +133,7 @@ impl AppState {
                 if self.current_column > 0 {
                     self.current_column -= 1;
                     self.selected_in_column = 0;
+                    self.scroll_offset = 0;
                     if let Some(todo_id) = self.get_current_todo_id() {
                         send_vim_command(todo_id);
                     }
@@ -120,6 +143,7 @@ impl AppState {
                 if self.current_column < self.project_names.len().saturating_sub(1) {
                     self.current_column += 1;
                     self.selected_in_column = 0;
+                    self.scroll_offset = 0;
                     if let Some(todo_id) = self.get_current_todo_id() {
                         send_vim_command(todo_id);
                     }
@@ -127,6 +151,14 @@ impl AppState {
             }
             _ => {}
         }
+    }
+
+    fn estimate_page_size(&self) -> usize {
+        // Simple heuristic: how many "average" todo blocks fit vertically.
+        // The UI uses dynamic per-todo heights; this value is only used for paging/scrolling logic.
+        let height = terminal::size().map(|(_, h)| h as usize).unwrap_or(24);
+        let usable = height.saturating_sub(8); // header/footer/borders
+        (usable / 4).max(1)
     }
 
     pub fn handle_complete_todo(&mut self, todo_file: &str) {
