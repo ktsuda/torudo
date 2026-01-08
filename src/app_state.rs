@@ -1,4 +1,4 @@
-use crate::todo::{add_missing_ids, group_todos_by_project_owned, load_todos, mark_complete, Item};
+use crate::todo::{Item, add_missing_ids, group_todos_by_project_owned, load_todos, mark_complete, update_priority};
 use crossterm::terminal;
 use log::{debug, error};
 use std::{collections::HashMap, env, process::Command};
@@ -159,6 +159,19 @@ impl AppState {
         let height = terminal::size().map(|(_, h)| h as usize).unwrap_or(24);
         let usable = height.saturating_sub(8); // header/footer/borders
         (usable / 4).max(1)
+    }
+
+    pub fn handle_update_priority(&mut self, todo_file: &str, priority: char) {
+        if let Some(todo_id) = self.get_current_todo_id() {
+            debug!("Attempting to update priority: {todo_id}");
+            match update_priority(todo_file, todo_id, priority) {
+                Ok(()) => {
+                    debug!("Successfully updated priority: {todo_id}");
+                    self.reload_todos(todo_file);
+                }
+                Err(e) => error!("Failed to update priority: {e}"),
+            }
+        }
     }
 
     pub fn handle_complete_todo(&mut self, todo_file: &str) {

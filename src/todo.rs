@@ -132,6 +132,72 @@ pub fn add_missing_ids(file_path: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+fn remove_priority(line: &str) -> &str {
+    line.strip_prefix("(A)")
+        .or_else(|| line.strip_prefix("(B)"))
+        .or_else(|| line.strip_prefix("(C)"))
+        .unwrap_or(line)
+        .trim_start()
+}
+
+pub fn update_priority(
+    todo_file: &str,
+    todo_id: &str,
+    priority: char,
+) -> Result<(), Box<dyn Error>> {
+    let content = fs::read_to_string(todo_file)?;
+    let lines: Vec<&str> = content.lines().collect();
+    let mut modified = false;
+    let mut new_lines = Vec::new();
+
+    for (line_num, line) in lines.iter().enumerate() {
+        if line.trim().is_empty() {
+            new_lines.push(line.to_string());
+            continue;
+        }
+
+        let todo = Item::parse(line, line_num + 1);
+        if let Some(id) = &todo.id {
+            if id != todo_id {
+                new_lines.push(line.to_string());
+                continue;
+            }
+
+            if todo.priority.is_some() {
+                if !matches!(priority, 'A' | 'B' | 'C') {
+                    let rest = remove_priority(line);
+                    new_lines.push(rest.to_string());
+                    modified = true;
+                } else if todo.priority != Some(priority) {
+                    let rest = remove_priority(line);
+                    let new_line = format!("({priority}) {rest}");
+                    new_lines.push(new_line);
+                    modified = true;
+                } else {
+                    new_lines.push(line.to_string());
+                }
+            } else if matches!(priority, 'A' | 'B' | 'C') {
+                let new_line = format!("({priority}) {line}");
+                new_lines.push(new_line);
+                modified = true;
+            } else {
+                new_lines.push(line.to_string());
+            }
+        }
+    }
+
+    if modified {
+        let new_content = new_lines.join("\n");
+        debug!(
+            "Adding missing IDs to {} lines in todo file",
+            usize::from(modified)
+        );
+        fs::write(todo_file, new_content)?;
+    }
+
+    Ok(())
+}
+
 pub fn mark_complete(todo_file: &str, todo_id: &str) -> Result<(), Box<dyn Error>> {
     let content = fs::read_to_string(todo_file)?;
     let lines: Vec<&str> = content.lines().collect();

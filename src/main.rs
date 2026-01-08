@@ -368,7 +368,7 @@ fn draw_ui(f: &mut ratatui::Frame, state: &AppState) {
     }
 
     let instructions =
-        Paragraph::new("jk: Navigate | hl: Change Column | x: Complete | r: Reload | q: Quit")
+        Paragraph::new("jk: Navigate | hl: Change Column | abcd: Priority | x: Complete | r: Reload | q: Quit")
             .block(Block::default().title("Instructions").borders(Borders::ALL))
             .alignment(Alignment::Center);
 
@@ -458,6 +458,12 @@ fn run_app<B: ratatui::backend::Backend>(
                             debug!("Navigation key pressed: {c}");
                         }
                         state.handle_navigation_key(c);
+                    }
+                    KeyCode::Char(c @ ('a' | 'b' | 'c' | 'd')) => {
+                        if debug_mode {
+                            debug!("Complete update priority received");
+                        }
+                        state.handle_update_priority(todo_file, c.to_ascii_uppercase());
                     }
                     KeyCode::Char('x') => {
                         if debug_mode {
