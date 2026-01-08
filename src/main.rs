@@ -236,7 +236,7 @@ fn draw_project_column_owned(
     f.render_widget(project_block, column_area);
 
     // Calculate dynamic height for each todo based on text length
-    let available_width = inner_area.width.saturating_sub(4); // Account for borders
+    let available_width = inner_area.width;
     let todo_constraints: Vec<Constraint> = project_todos
         .iter()
         .map(|todo| {
@@ -246,7 +246,7 @@ fn draw_project_column_owned(
 
             let lines_needed = if available_width > 10 {
                 // More conservative calculation for better text wrapping
-                let effective_width = available_width.saturating_sub(2); // Account for padding
+                let effective_width = available_width;
                 let lines = u16::try_from(total_text_len)
                     .expect("REASON")
                     .div_ceil(effective_width);
