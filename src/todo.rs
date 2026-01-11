@@ -121,7 +121,10 @@ pub fn add_missing_ids(file_path: &str) -> Result<(), Box<dyn Error>> {
     }
 
     if modified {
-        let new_content = new_lines.join("\n");
+        let mut new_content = new_lines.join("\n");
+        if !new_content.is_empty() && !new_content.ends_with('\n') {
+            new_content.push('\n');
+        }
         debug!(
             "Adding missing IDs to {} lines in todo file",
             usize::from(modified)
@@ -187,7 +190,10 @@ pub fn update_priority(
     }
 
     if modified {
-        let new_content = new_lines.join("\n");
+        let mut new_content = new_lines.join("\n");
+        if !new_content.is_empty() && !new_content.ends_with('\n') {
+            new_content.push('\n');
+        }
         debug!(
             "Adding missing IDs to {} lines in todo file",
             usize::from(modified)
@@ -246,7 +252,10 @@ pub fn mark_complete(todo_file: &str, todo_id: &str) -> Result<(), Box<dyn Error
 
         fs::write(&done_file, done_content)?;
 
-        let new_todo_content = new_lines.join("\n");
+        let mut new_todo_content = new_lines.join("\n");
+        if !new_todo_content.is_empty() && !new_todo_content.ends_with('\n') {
+            new_todo_content.push('\n');
+        }
         fs::write(todo_file, new_todo_content)?;
 
         debug!("Successfully moved todo to done.txt and updated todo.txt");
