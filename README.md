@@ -81,6 +81,7 @@ torudo -d
 - `j/k`: Navigate up/down within a project column
 - `h/l`: Switch between project columns
 - `x`: Mark selected todo as complete and move to done.txt
+- `a/b/c/d`: Add or remove the priority of the selected todo
 - `r`: Reload todo.txt file
 - `q`: Quit application
 
