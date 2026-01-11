@@ -367,10 +367,11 @@ fn draw_ui(f: &mut ratatui::Frame, state: &AppState) {
         }
     }
 
-    let instructions =
-        Paragraph::new("jk: Navigate | hl: Change Column | abcd: Priority | x: Complete | r: Reload | q: Quit")
-            .block(Block::default().title("Instructions").borders(Borders::ALL))
-            .alignment(Alignment::Center);
+    let instructions = Paragraph::new(
+        "jk: Navigate | hl: Change Column | abcd: Priority | x: Complete | r: Reload | q: Quit",
+    )
+    .block(Block::default().title("Instructions").borders(Borders::ALL))
+    .alignment(Alignment::Center);
 
     f.render_widget(title, chunks[0]);
     f.render_widget(instructions, chunks[2]);

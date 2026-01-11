@@ -1,4 +1,6 @@
-use crate::todo::{Item, add_missing_ids, group_todos_by_project_owned, load_todos, mark_complete, update_priority};
+use crate::todo::{
+    add_missing_ids, group_todos_by_project_owned, load_todos, mark_complete, update_priority, Item,
+};
 use crossterm::terminal;
 use log::{debug, error};
 use std::{collections::HashMap, env, process::Command};
